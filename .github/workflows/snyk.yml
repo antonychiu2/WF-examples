@@ -41,7 +41,7 @@ jobs:
         if: always()
         uses: mobb-dev/action/review@ignore-errors-in-exit-codes
         with:
-          report-file: "/home/runner/report2.json"
-          api-key: ${{ secrets.MOBB_API_TOKEN }}
+          report-file: "/home/runner/report.json"
+          api-key: ${{ secrets.MOBB_API_TOKEN_WRONG }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           scanner: snyk
