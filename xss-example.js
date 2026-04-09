@@ -3,3 +3,7 @@ var name = urlParams.get('name');
 
 var unsafe_div = window.document.getElementById("vulnerable-div");
 unsafe_div.innerHTML = "Hello " + name; 
+
+// Hardcode the source directly
+var name = window.location.hash; 
+document.getElementById("vulnerable-div").innerHTML = name;
