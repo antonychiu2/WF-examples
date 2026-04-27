@@ -13,7 +13,7 @@ name: "Mobb/Polaris Full Scan"
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, develop, stage, release]
+  pull_request: 
 
 jobs:
   scan-and-fix:
