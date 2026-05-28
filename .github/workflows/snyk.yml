@@ -28,4 +28,3 @@ jobs:
         with:
           api-key: ${{ secrets.MOBB_API_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          scanner: opengrep
