@@ -59,10 +59,9 @@ jobs:
         # shell for run: steps is bash, which would fail here.
         shell: sh
     steps:
-      # NOTE: this job deliberately contains no `uses:` steps. GitHub executes
-      # JavaScript actions with a glibc-built Node that it mounts into the
-      # container, and that Node cannot execute on musl either. The
-      # alpine-js-action job below demonstrates that separately.
+      # This job has no `uses:` steps simply because it does not need the repo -
+      # it only runs the two CLI packages. Whether GitHub Actions themselves work
+      # on Alpine is a separate question, answered by the alpine-toolchain job.
 
       - name: Show the platform
         run: |
@@ -106,7 +105,7 @@ jobs:
           echo "Alpine genuinely IS linux/x64, and the Mobb platform packages declare"
           echo "no libc constraint, so npm installs the glibc build anyway:"
           echo ""
-          ls -d /root/.npm/_npx/*/node_modules/@mobb.ai/* 2>/dev/null || echo "(nothing cached)"
+          ls -d "$HOME"/.npm/_npx/*/node_modules/@mobb.ai/* 2>/dev/null || echo "(nothing cached)"
           echo ""
           echo "Adding \"libc\": [\"glibc\"] to those packages would make npm skip them"
           echo "here, and the launcher would print its clear 'use mobbdev instead' message"
@@ -137,35 +136,72 @@ jobs:
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-  alpine-js-action:
-    name: Alpine - why a GitHub Action cannot run here at all
+  alpine-toolchain:
+    name: Alpine - can a GitHub Action's toolchain run here?
     runs-on: ubuntu-latest
     container: node:20-alpine
     defaults:
       run:
         shell: sh
     steps:
-      # actions/checkout is a JavaScript action. GitHub runs it with its own
-      # glibc-built Node, mounted into the container - which musl cannot execute.
-      # This is the same class of failure as the CLI binary, and it is why the
-      # Mobb action (which depends on actions/setup-node) cannot be used on
-      # Alpine regardless of which CLI package it invokes.
-      - name: Try a normal JavaScript action (actions/checkout)
+      # JavaScript actions used to be unusable in Alpine containers, because
+      # GitHub ran them with a glibc-built Node mounted into the container. The
+      # runner now probes the container and picks a musl-compatible Node, so this
+      # may well succeed - which is exactly what this job is here to measure
+      # rather than assume.
+      - name: A JavaScript action (actions/checkout)
         id: checkout
         continue-on-error: true
         uses: actions/checkout@v4
 
+      # The Mobb action depends on setup-node, so this is the step that decides
+      # whether the action could ever run on Alpine. setup-node installs official
+      # nodejs.org builds, which are glibc-only and have no musl variant.
+      - name: actions/setup-node
+        id: setupnode
+        continue-on-error: true
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Is node still usable after setup-node?
+        id: nodecheck
+        continue-on-error: true
+        run: |
+          echo "which node: $(command -v node || echo none)"
+          node --version
+          echo "node still runs."
+
+      - name: Can the new CLI run after setup-node?
+        id: clicheck
+        continue-on-error: true
+        run: npx --yes @mobb.ai/cli@latest --help > /dev/null
+
       - name: Report
         run: |
-          echo "actions/checkout outcome: ${{ steps.checkout.outcome }}"
+          CO="${{ steps.checkout.outcome }}"
+          SN="${{ steps.setupnode.outcome }}"
+          NC="${{ steps.nodecheck.outcome }}"
+          CC="${{ steps.clicheck.outcome }}"
+          echo "checkout=$CO setup-node=$SN node-after=$NC cli-after=$CC"
           {
-            echo "## Alpine: GitHub Actions themselves"
+            echo "## Alpine: the GitHub Actions toolchain"
             echo ""
-            echo "\`actions/checkout\` outcome: **${{ steps.checkout.outcome }}**"
+            echo "| step | outcome |"
+            echo "|---|---|"
+            echo "| \`actions/checkout\` (a JavaScript action) | **$CO** |"
+            echo "| \`actions/setup-node\` | **$SN** |"
+            echo "| \`node --version\` afterwards | **$NC** |"
+            echo "| \`@mobb.ai/cli\` afterwards | **$CC** |"
             echo ""
-            echo "GitHub runs JavaScript actions using a glibc-built Node it mounts into"
-            echo "the container, which musl cannot execute. So on Alpine the problem is not"
-            echo "specific to Mobb - most actions cannot run at all. Anyone on Alpine should"
-            echo "call the CLI directly rather than through a GitHub Action."
+            if [ "$SN" = "success" ] && [ "$NC" = "success" ]; then
+              echo "setup-node works on Alpine, so the Mobb action is not blocked by its"
+              echo "Node install step. Whether the action as a whole works still depends on"
+              echo "the CLI, which needs glibc - see the Alpine / musl job above."
+            else
+              echo "setup-node cannot provide a working Node here, so the Mobb action cannot"
+              echo "run on Alpine regardless of which CLI package it invokes. Anyone on"
+              echo "Alpine should call the CLI directly instead of using the action."
+            fi
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
