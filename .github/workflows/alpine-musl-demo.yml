@@ -1,0 +1,171 @@
+# A live demonstration of what happens when the Mobb CLI runs on Alpine Linux.
+#
+# Background: Alpine is a very small Linux used for containers. To stay small it
+# uses "musl" as its core system library instead of the usual "glibc". They are
+# not different versions of the same thing - they are different implementations,
+# so a program built against one cannot run on the other.
+#
+# The new Mobb CLI (@mobb.ai/cli) ships a prebuilt, glibc-linked binary, so it
+# cannot start on Alpine. The old package (mobbdev) is plain JavaScript, so
+# Alpine's own musl-built Node runs it fine.
+#
+# This workflow proves both, side by side, with a normal Ubuntu control group.
+name: Alpine (musl) experiment
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ubuntu-control:
+    name: Control - normal Ubuntu (glibc)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show the platform
+        run: |
+          . /etc/os-release && echo "OS: $PRETTY_NAME"
+          echo "libc: $(ldd --version | head -1)"
+
+      - name: New CLI (@mobb.ai/cli) - expected to WORK
+        run: |
+          npx --yes @mobb.ai/cli@latest --help > /dev/null
+          echo "OK: the new CLI runs on glibc."
+
+      - name: Old CLI (mobbdev) - expected to WORK
+        run: |
+          npx --yes mobbdev@latest --help > /dev/null
+          echo "OK: the old CLI runs on glibc."
+
+      - name: Summary
+        run: |
+          {
+            echo "## Control: normal Ubuntu (glibc)"
+            echo ""
+            echo "| CLI | outcome |"
+            echo "|---|---|"
+            echo "| \`@mobb.ai/cli\` (new, prebuilt binary) | works |"
+            echo "| \`mobbdev\` (old, plain JavaScript) | works |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alpine:
+    name: Alpine / musl
+    runs-on: ubuntu-latest
+    container: node:20-alpine
+    defaults:
+      run:
+        # node:20-alpine ships no bash, only the lighter `sh`. The default
+        # shell for run: steps is bash, which would fail here.
+        shell: sh
+    steps:
+      # NOTE: this job deliberately contains no `uses:` steps. GitHub executes
+      # JavaScript actions with a glibc-built Node that it mounts into the
+      # container, and that Node cannot execute on musl either. The
+      # alpine-js-action job below demonstrates that separately.
+
+      - name: Show the platform
+        run: |
+          . /etc/os-release && echo "OS: $PRETTY_NAME"
+          echo "libc:"
+          ldd --version 2>&1 | head -2 || true
+
+      - name: Install git
+        run: apk add --no-cache git > /dev/null
+
+      - name: New CLI (@mobb.ai/cli) - expected to FAIL on musl
+        run: |
+          set +e
+          npx --yes @mobb.ai/cli@latest --help > new.log 2>&1
+          rc=$?
+          set -e
+          echo "exit code: $rc"
+          echo "----- output -----"
+          cat new.log
+          echo "------------------"
+          if [ "$rc" -eq 0 ]; then
+            echo "::warning::The new CLI now WORKS on Alpine - musl support may have shipped. The docs saying otherwise should be revisited."
+            verdict="works (unexpected)"
+          else
+            echo "Failed, as documented: the binary is glibc-linked and cannot start on musl."
+            echo "Note the error says the file is missing. It is not - it is right there."
+            echo "What is missing is glibc, which the binary needs in order to start."
+            verdict="fails"
+          fi
+          {
+            echo "## Alpine (musl)"
+            echo ""
+            echo "| CLI | exit code | outcome |"
+            echo "|---|---|---|"
+            echo "| \`@mobb.ai/cli\` (new, prebuilt binary) | \`$rc\` | $verdict |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: What did npm actually install?
+        run: |
+          echo "npm chooses platform packages by operating system and CPU only."
+          echo "Alpine genuinely IS linux/x64, and the Mobb platform packages declare"
+          echo "no libc constraint, so npm installs the glibc build anyway:"
+          echo ""
+          ls -d /root/.npm/_npx/*/node_modules/@mobb.ai/* 2>/dev/null || echo "(nothing cached)"
+          echo ""
+          echo "Adding \"libc\": [\"glibc\"] to those packages would make npm skip them"
+          echo "here, and the launcher would print its clear 'use mobbdev instead' message"
+          echo "rather than dying with a confusing file-not-found."
+
+      - name: Old CLI (mobbdev) - expected to WORK on musl
+        run: |
+          set +e
+          npx --yes mobbdev@latest --help > old.log 2>&1
+          rc=$?
+          set -e
+          echo "exit code: $rc"
+          echo "----- last lines of output -----"
+          tail -15 old.log
+          echo "--------------------------------"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::The old CLI no longer works on Alpine either. That would remove the documented fallback."
+            echo "| \`mobbdev\` (old, plain JavaScript) | \`$rc\` | fails (unexpected) |" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Works: mobbdev is plain JavaScript, and Alpine's own musl-built Node runs it."
+          {
+            echo "| \`mobbdev\` (old, plain JavaScript) | \`$rc\` | works |"
+            echo ""
+            echo "**Why:** a prebuilt binary must match the system library it was built"
+            echo "against. JavaScript has no such constraint - whatever Node is present"
+            echo "runs it, including Alpine's musl build."
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alpine-js-action:
+    name: Alpine - why a GitHub Action cannot run here at all
+    runs-on: ubuntu-latest
+    container: node:20-alpine
+    defaults:
+      run:
+        shell: sh
+    steps:
+      # actions/checkout is a JavaScript action. GitHub runs it with its own
+      # glibc-built Node, mounted into the container - which musl cannot execute.
+      # This is the same class of failure as the CLI binary, and it is why the
+      # Mobb action (which depends on actions/setup-node) cannot be used on
+      # Alpine regardless of which CLI package it invokes.
+      - name: Try a normal JavaScript action (actions/checkout)
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+
+      - name: Report
+        run: |
+          echo "actions/checkout outcome: ${{ steps.checkout.outcome }}"
+          {
+            echo "## Alpine: GitHub Actions themselves"
+            echo ""
+            echo "\`actions/checkout\` outcome: **${{ steps.checkout.outcome }}**"
+            echo ""
+            echo "GitHub runs JavaScript actions using a glibc-built Node it mounts into"
+            echo "the container, which musl cannot execute. So on Alpine the problem is not"
+            echo "specific to Mobb - most actions cannot run at all. Anyone on Alpine should"
+            echo "call the CLI directly rather than through a GitHub Action."
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
