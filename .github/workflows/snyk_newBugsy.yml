@@ -6,7 +6,7 @@
 # MOBB_API_TOKEN - your mobb user credentials (autumatially set if you forked this repo via the Mobb app)
 # GITHUB_TOKEN - automatically set by GitHub
 
-name: "Mobb/Snyk"
+name: "Mobb with New Bugsy/Snyk"
 
 on:
   pull_request:
