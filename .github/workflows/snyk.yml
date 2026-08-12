@@ -6,7 +6,7 @@
 # MOBB_API_TOKEN - your mobb user credentials (autumatially set if you forked this repo via the Mobb app)
 # GITHUB_TOKEN - automatically set by GitHub
 
-name: "Mobb with New Bugsy/Snyk"
+name: "Mobb/Snyk"
 
 on:
   pull_request:
@@ -39,7 +39,7 @@ jobs:
           
       - name: Run Mobb on the findings and get fixes
         if: always()
-        uses: mobb-dev/action/review@feat/mobb-ai-cli-migration
+        uses: mobb-dev/action/review@v1.1
         with:
           report-file: "/home/runner/report.json"
           api-key: ${{ secrets.MOBB_API_TOKEN }}
