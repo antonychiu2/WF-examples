@@ -22,26 +22,9 @@ jobs:
       statuses: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Run Snyk SAST scan
-        run:
-          npx snyk auth ${{ secrets.SNYK_API_TOKEN }} && npx snyk code test --sarif-file-output=/home/runner/report.json ./
-        shell: bash -l {0}
-        
-      - name: Archive report
+      - name: Run Mobb on the finding in gh-fixer mode with built-in scanner
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: mobb-dev/action/review@feat/review-scan-and-fix
         with:
-          name: sast-report
-          path: /home/runner/report.json
-          
-      - name: Run Mobb on the findings and get fixes
-        if: always()
-        uses: mobb-dev/action/review@v1.1
-        with:
-          report-file: "/home/runner/report.json"
           api-key: ${{ secrets.MOBB_API_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          scanner: snyk
