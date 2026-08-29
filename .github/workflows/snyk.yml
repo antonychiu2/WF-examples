@@ -39,9 +39,9 @@ jobs:
           
       - name: Run Mobb on the findings and get fixes
         if: always()
-        uses: mobb-dev/action/review@v1.1
+        uses: mobb-dev/action/review@ignore-errors-in-exit-codes
         with:
           report-file: "/home/runner/report.json"
-          api-key: ${{ secrets.MOBB_API_TOKEN }}
+          api-key: "PURPOSELY_WRONG_TOKEN" # ${{ secrets.MOBB_API_TOKEN_WRONG }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           scanner: snyk
